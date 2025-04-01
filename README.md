@@ -1,6 +1,8 @@
 # Battle-Brothers-Damage-Calculator
 Updated for Of Flesh and Faith
 
+Latest Update: 3/31/2025 - Improved the accuracy of rounding for damage calculation. (Thank you Calandro). Changed 3Head Flail data to return number of swings instead of tracking by each individual subhit, as subhits were skewing the data in its favor. (Thank you smr_rst). See bottom of calculator script for full details.
+
 Latest Update: 3/20/2025 - Readjusted Split Man logic to account for recent change in game where it now interacts with damage modifiers on the second hit. Adjusted Fearsome formula to 15% to match recent change in game. Other minor changes - see bottom of calculator script for full details.
 
 Note: Osgboy has made a web-app version of the calculator if you don't want to have to download and use the raw code. Check it out here: https://osgboy.pythonanywhere.com/
