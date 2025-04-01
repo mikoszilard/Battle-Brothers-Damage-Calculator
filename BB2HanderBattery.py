@@ -1,4 +1,4 @@
-#Battle Brothers Damage Calculator -- 2Hander Battery Version 1.7.0:
+#Battle Brothers Damage Calculator -- 2Hander Battery Version 1.7.1:
 #Welcome. Modify the below values as necessary until you reach the line ----- break.
 
 #This version of the calculator will run all top line 2Hander options in the provided scenario.
@@ -191,6 +191,7 @@ Hammer10 = 0            #Guarantees at least 10 hp damage, applies to 1H Hammer 
 DestroyArmor = 0        #Will use Destroy Armor once and then switch to normal attacks.
 DestroyArmorMastery = 0 #Hammer Mastery. Will use Destroy Armor once and then switch to normal attacks.
 DestroyArmorTwice = 0   #Uses Destroy Armor two times instead of 1. Does nothing unless DestroyArmor or DestroyArmorMastery are set.
+AoE2HHammer = 0         #Applies to Shatter, reduces Ignore by 10%.
 Axe1H = 0               #Applies bonus damage to Headshots. Gets negated by SteelBrow.
 SplitMan = 0            #Applies to single target 2HAxe except for Longaxe.
 AoE2HAxe = 0            #Applies to Round Swing and Split in Two (Bardiche), reduces Ignore by 10%.
@@ -445,6 +446,8 @@ def calc():
         Ignore *= 1.25
     if Duelist == 1:
         Ignore += .25
+    if AoE2HHammer == 1:
+        Ignore -= .1
     if AoE2HAxe == 1:
         Ignore -= .1
     if Ignore > 1:
@@ -637,6 +640,9 @@ def calc():
                     Headshotchance = 100
                 else:
                     Headshotchance = Headchance    
+            #Combining various damage modifiers used in damage calculations:
+            HPDamageModifiers = NimbleMod * SkeletonMod * GladMod * IndomMod * DamageMod * ExecMod * AimedShotMod * DecapMod
+            ArmorDamageModifiers = ArmorMod * GladMod * IndomMod * DamageMod * ExecMod
 
             #Begin damage rolls:
             hp_roll = random.randint(Mind,Maxd) #Random roll to determine unmodified hp damage.
@@ -658,40 +664,34 @@ def calc():
                 if Flail2HPound == 1:
                     Ignore = Flail2HHeadshot
                 
+                #Begin damage calculation.    
                 #Destroy armor check -- if Destroy Armor special is active do this code block and skip the rest.
                 if DArmorMod != 1:
                     hp_roll = 10 #DestroyArmor forces hp damage to = 10.
-                    hp -= hp_roll 
-                    armor_roll = random.randint(Mind,Maxd) * ArmorMod * DArmorMod * GladMod * IndomMod * DamageMod *  ExecMod
+                    armor_roll = random.randint(Mind,Maxd) * ArmorDamageModifiers * DArmorMod
                     ForgeSaved += armor_roll - armor_roll * ForgeMod
-                    armor_roll = min(helmet,(armor_roll * ForgeMod))
-                    helmet = math.ceil(helmet - armor_roll) #Rounding armor damage.
-                #If not DestroyArmor, and no armor is present, apply damage directly to hp.
+                    armor_roll = math.floor(min(helmet,(armor_roll * ForgeMod)))
+                    helmet -= armor_roll
+                #If not DestroyArmor, and no armor is present, apply damage directly to hp. Damage formula still distincts armor ignore vs. non armor ignore despite no armor present.
                 elif helmet == 0:
-                    hp_roll = hp_roll * NimbleMod * SkeletonMod * GladMod * IndomMod * ((DamageMod *  ExecMod * AimedShotMod) * DecapMod) * HeadMod
-                    if Hammer10 == 1: #If 1H Hammer, deal 10 damage minimum.
-                        hp_roll = max(hp_roll,10)
-                    hp = math.ceil(hp - hp_roll) #Rounding hp damage.
-                #Otherwise, do the following.
-                else:
-                    armor_roll = random.randint(Mind,Maxd) * ArmorMod * GladMod * IndomMod * DamageMod *  ExecMod
+                    Non_Ignore_Damage = math.floor(hp_roll * (1 - Ignore) * HPDamageModifiers) #Non armor ignoring side of the damage formula. Gets rounded down.
+                    Armor_Ignore_Damage = hp_roll * Ignore * HPDamageModifiers #Armor ignoring side of the damage formula.
+                    hp_roll = math.floor((Armor_Ignore_Damage + Non_Ignore_Damage) * HeadMod) #Adding both sides of the formula together. Applies headshot modifier. Rounds down after.
+                #Otherwise (armor is present), do the following.
+                else: #Starts by calculating armor damage.
+                    armor_roll = random.randint(Mind,Maxd) * ArmorDamageModifiers
                     ForgeSaved += armor_roll - armor_roll * ForgeMod #Calculate how much armor is saved by Forge.
-                    armor_roll = min(helmet,(armor_roll * ForgeMod)) #Applying Forge, and armor damage cannot exceed current armor.
+                    armor_roll = math.floor(min(helmet,(armor_roll * ForgeMod))) #Applying Forge, and armor damage cannot exceed current armor.
                     helmet -= armor_roll #Armor damage applied to helmet.
                     #If the helmet does not get destroyed by the attack, do the following.
-                    if helmet > 0:
-                        hp_roll = max(0,(hp_roll * Ignore * NimbleMod * SkeletonMod * GladMod * IndomMod * ((DamageMod *  ExecMod * AimedShotMod) * DecapMod) - (helmet * 0.1)) * HeadMod)
-                        if Hammer10 == 1:
-                            hp_roll = max(hp_roll,10) 
-                        helmet = math.ceil(helmet)
-                        hp = math.ceil(hp - hp_roll)
-                    #If the helmet did get destroyed by the attack, do the following.
-                    else:
-                        OverflowDamage = max(0,(hp_roll * (1 - Ignore) * NimbleMod * SkeletonMod * GladMod * IndomMod * ((DamageMod *  ExecMod * AimedShotMod) * DecapMod) - armor_roll))
-                        hp_roll = (hp_roll * Ignore * NimbleMod * SkeletonMod * GladMod * IndomMod * ((DamageMod *  ExecMod * AimedShotMod) * DecapMod) + OverflowDamage) * HeadMod
-                        if Hammer10 == 1:
-                            hp_roll = max(hp_roll,10)
-                        hp = math.ceil(hp - hp_roll)
+                    if helmet > 0: #Helmet was not destroyed. We are calculating how much armor ignoring hp damage is dealt.
+                        hp_roll = math.floor(max(0,(hp_roll * Ignore * HPDamageModifiers - (helmet * 0.1)) * HeadMod))
+
+                    #If the helmet did get destroyed by the attack, do the following to see how much hp damage is dealt.
+                    else: #Damage is split between armor ignoring damage and non-ignoring damage. Non-ignoring damage cannot be negative but it can be zero.
+                        Non_Ignore_Damage = math.floor(max(0,(hp_roll * (1 - Ignore) * HPDamageModifiers - armor_roll)))
+                        Armor_Ignore_Damage = hp_roll * Ignore * HPDamageModifiers
+                        hp_roll = math.floor((Armor_Ignore_Damage + Non_Ignore_Damage) * HeadMod) #Adding both sides of the formula together. Applies headshot modifier. Rounds down after.
                         
             else: #If not a headshot, do the following. 
                 #2H Flail Check -- Have a higher armor ignoring% on Pound for headshots compared to bodyshots.
@@ -707,33 +707,35 @@ def calc():
                 else:
                     if DArmorMod != 1:
                         hp_roll = 10
-                        hp -= hp_roll
-                        armor_roll = random.randint(Mind,Maxd) * ArmorMod * DArmorMod * GladMod * IndomMod * DamageMod *  ExecMod
+                        armor_roll = random.randint(Mind,Maxd) * ArmorDamageModifiers * DArmorMod
                         ForgeSaved += armor_roll - armor_roll * ForgeMod
-                        armor_roll = min(body,(armor_roll * ForgeMod))
-                        body = math.ceil(body - armor_roll)
-                    elif body == 0 or Puncture == 1:
-                        hp_roll = hp_roll * NimbleMod * SkeletonMod * GladMod * IndomMod * AttachMod * ((DamageMod *  ExecMod * AimedShotMod) * DecapMod)
-                        if Hammer10 == 1:
-                            hp_roll = max(hp_roll,10)
-                        hp = math.ceil(hp - hp_roll)
+                        armor_roll = math.floor(min(body,(armor_roll * ForgeMod)))
+                        body -= armor_roll
+                    
+                    elif Puncture == 1: #Puncture ignores armor entirely, including attachments.
+                        hp_roll = math.floor(hp_roll * HPDamageModifiers)
+                    
+                    elif body == 0: #If no armor is present, do the following.
+                        Non_Ignore_Damage = math.floor(hp_roll * (1 - Ignore) * HPDamageModifiers * AttachMod)
+                        Armor_Ignore_Damage = hp_roll * Ignore * HPDamageModifiers * AttachMod
+                        hp_roll = math.floor(Armor_Ignore_Damage + Non_Ignore_Damage)
+
                     else:
-                        armor_roll = random.randint(Mind,Maxd) * ArmorMod * GladMod * IndomMod * DamageMod *  ExecMod * AttachMod
+                        armor_roll = random.randint(Mind,Maxd) * ArmorDamageModifiers * AttachMod
                         ForgeSaved += armor_roll - armor_roll * ForgeMod
-                        armor_roll = min(body,(armor_roll * ForgeMod))
+                        armor_roll = math.floor(min(body,(armor_roll * ForgeMod)))
                         body -= armor_roll
                         if body > 0:
-                            hp_roll = max(0,(hp_roll * Ignore * NimbleMod * SkeletonMod * AdFurPadMod * GladMod * IndomMod * AttachMod * ((DamageMod *  ExecMod * AimedShotMod) * DecapMod) - (body * 0.1)))
-                            if Hammer10 == 1:
-                                hp_roll = max(hp_roll,10)
-                            body = math.ceil(body)
-                            hp = math.ceil(hp - hp_roll)
+                            hp_roll = math.floor(max(0,(hp_roll * Ignore * HPDamageModifiers * AdFurPadMod * AttachMod - (body * 0.1))))
                         else:
-                            OverflowDamage = max(0,(hp_roll * (1 - Ignore * AdFurPadMod) * NimbleMod * SkeletonMod * GladMod * IndomMod * AttachMod * ((DamageMod *  ExecMod * AimedShotMod) * DecapMod) - armor_roll))
-                            hp_roll = hp_roll * Ignore * NimbleMod * SkeletonMod * AdFurPadMod * GladMod * IndomMod * AttachMod * ((DamageMod *  ExecMod * AimedShotMod) * DecapMod) + OverflowDamage
-                            if Hammer10 == 1:
-                                hp_roll = max(hp_roll,10)
-                            hp = math.ceil(hp - hp_roll)
+                            Non_Ignore_Damage = math.floor(max(0,(hp_roll * (1 - Ignore * AdFurPadMod) * HPDamageModifiers * AttachMod - armor_roll)))
+                            Armor_Ignore_Damage = hp_roll * Ignore * HPDamageModifiers * AdFurPadMod * AttachMod
+                            hp_roll = math.floor(Armor_Ignore_Damage + Non_Ignore_Damage)
+
+            #Apply damage to defender:
+            if Hammer10 == 1: #1H Hammer check to do at least 10 hp damage.
+                hp_roll = max(hp_roll,10)
+            hp -= hp_roll #Reducing defender hp.
 
             #Gladiator - Bear trait. Add a stack:
             if GloriousEndurance == 1:
@@ -752,7 +754,7 @@ def calc():
                         if math.floor(hp_roll) >= Def_HP * InjuryThreshold:
                             Injury = 1
                             if Flail3Head == 1:
-                                hits_until_1st_injury.append(count/3)
+                                hits_until_1st_injury.append(math.ceil(count/3))
                             else:
                                 hits_until_1st_injury.append(count)
                         UseHeadShotInjuryFormula = 0
@@ -762,7 +764,7 @@ def calc():
                         if math.floor(hp_roll) >= Def_HP * InjuryThreshold:
                             Injury = 1
                             if Flail3Head == 1:
-                                hits_until_1st_injury.append(count/3)
+                                hits_until_1st_injury.append(math.ceil(count/3))
                             else:
                                 hits_until_1st_injury.append(count)
 
@@ -773,7 +775,7 @@ def calc():
                         if math.floor(hp_roll) >= Def_HP * InjuryThreshold:
                             HeavyInjuryChance = 1
                             if Flail3Head == 1:
-                                hits_until_1st_heavy_injury_chance.append(count/3)
+                                hits_until_1st_heavy_injury_chance.append(math.ceil(count/3))
                             else:
                                 hits_until_1st_heavy_injury_chance.append(count)
                         UseHeadShotInjuryFormulaHeavy = 0
@@ -783,7 +785,7 @@ def calc():
                         if math.floor(hp_roll) >= Def_HP * InjuryThreshold:
                             HeavyInjuryChance = 1
                             if Flail3Head == 1:
-                                hits_until_1st_heavy_injury_chance.append(count/3)
+                                hits_until_1st_heavy_injury_chance.append(math.ceil(count/3))
                             else:
                                 hits_until_1st_heavy_injury_chance.append(count)                   
 
@@ -813,43 +815,46 @@ def calc():
                         BoneplateMod = 0
                         SMhp_roll = 0
                     else:
-                        SMhp_roll = random.randint(Mind,Maxd) * .5
+                        SMhp_roll = random.randint(Mind,Maxd) * .5 #Split Man has a 50% damage modifier.
                         if body == 0:
-                            SMhp_roll = SMhp_roll * NimbleMod * GladMod * IndomMod * AttachMod * DamageMod * ExecMod
-                            hp = math.ceil(hp - SMhp_roll)
+                            Non_Ignore_Damage = math.floor(SMhp_roll * (1 - Ignore) * HPDamageModifiers * AttachMod)
+                            Armor_Ignore_Damage = SMhp_roll * Ignore * HPDamageModifiers * AttachMod
+                            SMhp_roll = math.floor(Armor_Ignore_Damage + Non_Ignore_Damage)
                         else:
-                            SMarmor_roll = random.randint(Mind,Maxd) * .5 * ArmorMod * GladMod * IndomMod * AttachMod * DamageMod * ExecMod
+                            SMarmor_roll = random.randint(Mind,Maxd) * .5 * ArmorDamageModifiers * AttachMod
                             ForgeSaved += SMarmor_roll - SMarmor_roll * ForgeMod
-                            SMarmor_roll = min(body,(SMarmor_roll * ForgeMod))
+                            SMarmor_roll = math.floor(min(body,(SMarmor_roll * ForgeMod)))
                             body -= SMarmor_roll
                             if body > 0:
-                                SMhp_roll = max(0,(SMhp_roll * Ignore * NimbleMod * AdFurPadMod * GladMod * IndomMod * AttachMod * DamageMod * ExecMod - (body * 0.1)))
-                                body = math.ceil(body)
-                                hp = math.ceil(hp - SMhp_roll)
+                                SMhp_roll = math.floor(max(0,(SMhp_roll * Ignore * HPDamageModifiers * AdFurPadMod * AttachMod - (body * 0.1))))
                             else:
-                                OverflowDamage = max(0,(SMhp_roll * (1 - Ignore * AdFurPadMod) * NimbleMod * GladMod * IndomMod * AttachMod * DamageMod * ExecMod - SMarmor_roll))
-                                SMhp_roll = SMhp_roll * Ignore * NimbleMod * AdFurPadMod * GladMod * IndomMod * AttachMod * DamageMod * ExecMod + OverflowDamage
-                                hp = math.ceil(hp - SMhp_roll)
-                #If SplitMan is active, do the following code block for the bonus head hit if the original hit was a body hit.
+                                Non_Ignore_Damage = math.floor(max(0,(SMhp_roll * (1 - Ignore * AdFurPadMod) * HPDamageModifiers * AttachMod - SMarmor_roll)))
+                                Armor_Ignore_Damage = SMhp_roll * Ignore * HPDamageModifiers * AdFurPadMod * AttachMod
+                                SMhp_roll = math.floor(Armor_Ignore_Damage + Non_Ignore_Damage)
+                    #Applying damage to defender hp.
+                    hp -= SMhp_roll
+
+                #If SplitMan is active, do the following code block for the bonus head hit if the original hit was a body hit. Split Man secondary hit does not get a headshot bonus.
                 if SplitManHeadFollowUp == 1:
                     SplitManHeadFollowUp = 0
                     SMhp_roll = random.randint(Mind,Maxd) * .5
                     if helmet == 0:
-                        SMhp_roll = SMhp_roll * NimbleMod * GladMod * IndomMod * DamageMod * ExecMod
-                        hp = math.ceil(hp - SMhp_roll)
+                        Non_Ignore_Damage = math.floor(SMhp_roll * (1 - Ignore) * HPDamageModifiers) #Non armor ignoring side of the damage formula. Gets rounded down.
+                        Armor_Ignore_Damage = SMhp_roll * Ignore * HPDamageModifiers #Armor ignoring side of the damage formula.
+                        SMhp_roll = math.floor(Armor_Ignore_Damage + Non_Ignore_Damage) #Adding both sides of the formula together. Applies headshot modifier. Rounds down after.
                     else:
-                        SMarmor_roll = random.randint(Mind,Maxd) * .5 * ArmorMod * GladMod * IndomMod * DamageMod * ExecMod
+                        SMarmor_roll = random.randint(Mind,Maxd) * .5 * ArmorDamageModifiers
                         ForgeSaved += SMarmor_roll - SMarmor_roll * ForgeMod
-                        SMarmor_roll = min(helmet,(SMarmor_roll * ForgeMod))
+                        SMarmor_roll = math.floor(min(helmet,(SMarmor_roll * ForgeMod)))
                         helmet -= SMarmor_roll
                         if helmet > 0:
-                            SMhp_roll = max(0,(SMhp_roll * Ignore * NimbleMod * GladMod * IndomMod * DamageMod * ExecMod - (helmet * 0.1)))
-                            helmet = math.ceil(helmet)
-                            hp = math.ceil(hp - SMhp_roll)
+                            SMhp_roll = math.floor(max(0,(SMhp_roll * Ignore * HPDamageModifiers - (helmet * 0.1))))
                         else:
-                            OverflowDamage = max(0,(SMhp_roll * (1 - Ignore) * NimbleMod * GladMod * IndomMod * DamageMod * ExecMod - SMarmor_roll))
-                            SMhp_roll = SMhp_roll * Ignore * NimbleMod * GladMod * IndomMod * DamageMod * ExecMod + OverflowDamage
-                            hp = math.ceil(hp - SMhp_roll)
+                            Non_Ignore_Damage = math.floor(max(0,(SMhp_roll * (1 - Ignore) * HPDamageModifiers - SMarmor_roll)))
+                            Armor_Ignore_Damage = SMhp_roll * Ignore * HPDamageModifiers
+                            SMhp_roll = math.floor(Armor_Ignore_Damage + Non_Ignore_Damage) #Adding both sides of the formula together. Applies headshot modifier. Rounds down after.
+                    #Applying damage to defender hp.
+                    hp -= SMhp_roll
 
                 #Gladiator - Bear trait check: Add another stack for the Bear to account for the second hit from Split Man
                 if GloriousEndurance == 1:
@@ -861,14 +866,14 @@ def calc():
                     if math.floor(hp_roll) > 0:
                         FirstMoraleCheck = 1
                         if Flail3Head == 1:
-                            hits_until_1st_morale.append(count/3)
+                            hits_until_1st_morale.append(math.ceil(count/3))
                         else:
                             hits_until_1st_morale.append(count)
                 else:
                     if math.floor(hp_roll) >= 15:
                         FirstMoraleCheck = 1
                         if Flail3Head == 1:
-                            hits_until_1st_morale.append(count/3)
+                            hits_until_1st_morale.append(math.ceil(count/3))
                         else:
                             hits_until_1st_morale.append(count)
 
@@ -941,18 +946,18 @@ def calc():
                     if Fearsome == 1:
                         NumberFearsomeProcs.append(FearsomeProcs)
                     if Flail3Head == 1:
-                        hits_until_death.append(count/3)
+                        hits_until_death.append(math.ceil(count/3))
                     else:
                         hits_until_death.append(count)
                     #Check if the following trackers were hit and if not, append the time until death to their lists for later analysis instead of having an empty data point.
                     if Injury == 0:
                         if Flail3Head == 1:
-                            hits_until_1st_injury.append(count/3)
+                            hits_until_1st_injury.append(math.ceil(count/3))
                         else:
                             hits_until_1st_injury.append(count)
                     if HeavyInjuryChance == 0:
                         if Flail3Head == 1:
-                            hits_until_1st_heavy_injury_chance.append(count/3)
+                            hits_until_1st_heavy_injury_chance.append(math.ceil(count/3))
                         else:
                             hits_until_1st_heavy_injury_chance.append(count)
 
@@ -1067,7 +1072,7 @@ calc()
 
 Mind = 60
 Maxd = 90
-Ignore = 50
+Ignore = 40
 print("2H Hammer - AoE:")
 calc()
 
@@ -1334,3 +1339,14 @@ calc()
 #-- Recoded the Injury Check section to be much more concise (Thank you Osgboy for suggestion/advice).
 #-- Changed injury multiplier for Crippling Strikes and Shamshir (without Mastery) to .66 to match how it is in game (previously was using 2/3).
 #-- Fixed an oversight with all sub-variants of the calculator where they could return injury rates that were faster than reality in circumstances where the enemy could get their first injury on the same hit where they die. The main BBCalc.py did not have this problem.
+#Version 1.7.1 (3/31/2025)
+#-- Improved the accuracy of when the damage formula rounds damage (Thank you Calandro), to accurately match the game.
+#---- The damage formula splits ignore and non-ignore damage regardless of whether armor is present or not. The non-ignore part rounds down before adding into the ignore part. The calculator was previously missing this extra instance of rounding.
+#---- Armor rounding occurs (rounds down) before the 10% remaining armor value is calculated. Previosly the calculator was not rounding the armor damage down until the end of the formula.
+#---- The impact of these changes is minor, but the result is that defenders do slightly better than before. Effect less noticeable on strong attackers.
+#-- Recoded parts of the damage calculation sections of the code to try and be more efficient.
+#---- Combined various hp and armor damage modifiers into two variables instead of writing each as their own variable repeatedly in the code.
+#-- Reworked how 3Head Flail data is tracked to return the number of swings rather than tracking by each individual sub-hit. So instead of showing .33|.66|1 hits to kill, these would all be rounded up to 1.
+#---- Tracking by sub-hit skewed the averages down and made the weapon look stronger (Thank you smr_rst). Realistically it does not matter if you kill in a sub-hit but rather how many total swings it takes. 
+#-- Added a AoE 2HHammer switch to the weapon options.
+#-- Fixed an oversight on the 2H Hammer AoE test where I forgot to give it 10% less armor ignore than the single target test. (Thank you smr_rst).
